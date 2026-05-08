@@ -1,0 +1,28 @@
+name: Madinah Cafe Radar
+
+on:
+  schedule:
+    - cron: '0 * * * *' # كذا بيشتغل آلياً كل ساعة بالضبط
+  workflow_dispatch: # هذا يخليك تقدر تشغله بيدك متى ما بغيت
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run radar
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          GMAPS_API_KEY: ${{ secrets.GMAPS_API_KEY }}
+        run: python main.py
