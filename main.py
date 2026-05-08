@@ -1,7 +1,7 @@
 import requests
 import os
 
-# الإحداثيات والنطاق بناءً على صورتك (تغطية 18 كم من قلب المدينة)
+# الإحداثيات والنطاق (18 كم) بناءً على الدائرة اللي حددتها
 CITY_LOCATION = "24.4673,39.6111" 
 RADIUS = "18000" 
 
@@ -12,22 +12,22 @@ def send_to_telegram(token, chat_id, name, address, rating, place_id, ptype):
     # تحديد الأيقونة حسب النوع
     if ptype == "cafe":
         icon = "☕️"
-        label = "كافيه جديد"
+        label = "كافيه"
     elif ptype == "bakery":
         icon = "🥐"
-        label = "مخبز/حلى جديد"
+        label = "مخبز/حلى"
     else:
         icon = "🍴"
-        label = "مطعم جديد"
+        label = "مطعم"
     
     message = (
-        f"{icon} <b>تم رصد {label} في المدينة!</b>\n"
+        f"{icon} <b>رادار طيبة رصد لك: {label}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"<b>📍 الاسم:</b> {name}\n"
         f"<b>🗺 الموقع:</b> {address}\n"
-        f"<b>⭐ التقييم:</b> {rating if rating else 'لا يوجد تقييم (افتتاح جديد! 😍)'}\n"
+        f"<b>⭐ التقييم:</b> {rating if rating else 'جديد (لا يوجد تقييم)'}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"📍 <i>رادار المدينة المنورة - طلال التقني</i>"
+        f"📍 <i>رادار طيبة للجديد - طلال التقني</i>"
     )
     
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -46,16 +46,8 @@ def monitor_city():
     chat_id = os.getenv('CHAT_ID')
     gmaps_key = os.getenv('GMAPS_API_KEY')
     
-    # ملف الذاكرة لحفظ الأماكن المرسلة سابقاً
-    last_ids_file = ""
-    old_ids = set()
-    if os.path.exists(last_ids_file):
-        with open(last_ids_file, "r") as f:
-            old_ids = set(f.read().splitlines())
-
     # الأنواع التي يبحث عنها الرادار
     types_to_search = ["cafe", "restaurant", "bakery"]
-    current_ids = set()
 
     for ptype in types_to_search:
         # طلب البيانات من جوجل ماب
@@ -65,23 +57,15 @@ def monitor_city():
             response = requests.get(url).json()
             results = response.get('results', [])
             
-            for place in results:
+            # بنرسل أول 3 نتائج فقط من كل نوع عشان ما يمتلي الشات فجأة
+            for place in results[:3]:
+                name = place['name']
+                address = place.get('vicinity', 'المدينة المنورة')
+                rating = place.get('rating', 0)
                 pid = place['place_id']
-                current_ids.add(pid)
-                
-                # إذا كان المكان لم يرسل من قبل، أرسله الآن
-                if pid not in old_ids:
-                    name = place['name']
-                    address = place.get('vicinity', 'المدينة المنورة')
-                    rating = place.get('rating', 0)
-                    send_to_telegram(tg_token, chat_id, name, address, rating, pid, ptype)
+                send_to_telegram(tg_token, chat_id, name, address, rating, pid, ptype)
         except Exception as e:
             print(f"خطأ في البحث عن {ptype}: {e}")
-            continue
-
-    # تحديث ملف الذاكرة
-    with open(last_ids_file, "w") as f:
-        f.write("\n".join(current_ids))
 
 if __name__ == "__main__":
     monitor_city()
