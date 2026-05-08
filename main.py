@@ -1,34 +1,90 @@
 import requests
 import os
 
-def test_radar():
-    token = os.getenv('TELEGRAM_TOKEN')
-    chat_id = os.getenv('CHAT_ID')
-    gmaps_key = os.getenv('GMAPS_API_KEY')
-    
-    # 1. تجربة إرسال رسالة بسيطة للتليجرام
-    test_msg = "🔔 فحص الاتصال: إذا وصلت هذه الرسالة فالبوت سليم!"
-    tg_url = f"https://api.telegram.org/bot{token}/sendMessage"
-    r_tg = requests.post(tg_url, json={"chat_id": chat_id, "text": test_msg})
-    
-    if r_tg.status_code == 200:
-        print("✅ التليجرام سليم والرسالة وصلت!")
-    else:
-        print(f"❌ خطأ في التليجرام: {r_tg.text}")
+# إعدادات تليجرام
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+CHAT_ID = os.getenv('CHAT_ID')
+MEMORY_FILE = "places_memory.txt"
 
-    # 2. تجربة جلب بيانات من جوجل ماب (كافيه واحد فقط)
-    # إحداثيات قريبة جداً من الحرم
-    loc = "24.4673,39.6111"
-    g_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={loc}&radius=5000&type=cafe&key={gmaps_key}"
-    r_g = requests.get(g_url).json()
+# إحداثيات المدينة المنورة (نطاق واسع يغطي أغلب الأحياء)
+# [جنوب، غرب، شمال، شرق]
+MADINAH_BBOX = "24.30,39.40,24.60,39.80"
+
+def is_sent(place_id):
+    if not os.path.exists(MEMORY_FILE):
+        return False
+    with open(MEMORY_FILE, 'r') as f:
+        return str(place_id) in f.read()
+
+def save_to_memory(place_id):
+    with open(MEMORY_FILE, 'a') as f:
+        f.write(str(place_id) + '\n')
+
+def send_to_telegram(name, ptype, lat, lon):
+    # تحديد الأيقونة حسب النوع
+    icon = "☕️" if ptype == "cafe" else "🍽"
+    label = "كافيه جديد" if ptype == "cafe" else "مطعم جديد"
     
-    status = r_g.get('status')
-    if status == "OK":
-        print(f"✅ جوجل ماب سليم! وجدنا {len(r_g.get('results'))} كافيه.")
-    else:
-        print(f"❌ خطأ من جوجل ماب: {status}")
-        if status == "REQUEST_DENIED":
-            print("السبب: مفتاح API غير مفعل أو Places API معطلة.")
+    # رابط جوجل ماب بالإحداثيات
+    map_link = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+    
+    message = (
+        f"{icon} <b>رادار طيبة رصد لك: {label}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"<b>📍 الاسم:</b> {name}\n"
+        f"<b>🏙 المدينة:</b> المدينة المنورة\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📍 <i>رادار طيبة للجديد - طلال التقني</i>"
+    )
+    
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML",
+        "reply_markup": {
+            "inline_keyboard": [[{"text": "🗺 فتح في الخريطة", "url": map_link}]]
+        }
+    }
+    requests.post(url, json=payload)
+
+def hunt_places():
+    print("جاري فحص المدينة المنورة عن أماكن جديدة...")
+    
+    # استعلام Overpass لجلب الكافيهات والمطاعم في المدينة
+    query = f"""
+    [out:json][timeout:25];
+    (
+      node["amenity"="cafe"]({MADINAH_BBOX});
+      node["amenity"="restaurant"]({MADINAH_BBOX});
+    );
+    out body;
+    """
+    
+    url = "https://overpass-api.de/api/interpreter"
+    try:
+        response = requests.post(url, data={'data': query}).json()
+        places = response.get('elements', [])
+        
+        for p in places:
+            p_id = p.get('id')
+            tags = p.get('tags', {})
+            name = tags.get('name', 'مكان غير مسمى')
+            ptype = tags.get('amenity')
+            lat = p.get('lat')
+            lon = p.get('lon')
+            
+            # إذا كان المكان له اسم ولم يتم إرساله من قبل
+            if name != 'مكان غير مسمى' and not is_sent(p_id):
+                send_to_telegram(name, ptype, lat, lon)
+                save_to_memory(p_id)
+                print(f"✅ تم رصد: {name}")
+                
+    except Exception as e:
+        print(f"❌ خطأ في جلب البيانات: {e}")
 
 if __name__ == "__main__":
-    test_radar()
+    if not TOKEN or not CHAT_ID:
+        print("خطأ: تأكد من إضافة السيكريتس")
+    else:
+        hunt_places()
