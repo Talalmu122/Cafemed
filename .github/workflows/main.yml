@@ -2,12 +2,16 @@ name: Madinah Cafe Radar
 
 on:
   schedule:
-    - cron: '0 * * * *' # كذا بيشتغل آلياً كل ساعة بالضبط
-  workflow_dispatch: # هذا يخليك تقدر تشغله بيدك متى ما بغيت
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # هذي السطور ضرورية عشان جيت هاب يقدر يحفظ الملفات
+    permissions:
+      contents: write
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -26,3 +30,11 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
           GMAPS_API_KEY: ${{ secrets.GMAPS_API_KEY }}
         run: python main.py
+
+      - name: Save memory (Keep track of cafes)
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add last_places_ids.txt || echo "No changes"
+          git commit -m "Update cafe memory" || echo "No changes"
+          git push
