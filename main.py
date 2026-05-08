@@ -47,7 +47,7 @@ def monitor_city():
     gmaps_key = os.getenv('GMAPS_API_KEY')
     
     # ملف الذاكرة لحفظ الأماكن المرسلة سابقاً
-    last_ids_file = "last_places_ids.txt"
+    last_ids_file = ""
     old_ids = set()
     if os.path.exists(last_ids_file):
         with open(last_ids_file, "r") as f:
