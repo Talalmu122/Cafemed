@@ -4,10 +4,9 @@ import os
 # إعدادات تليجرام
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
-# تأكد أن هذا الاسم هو نفس الموجود في جيت هاب أو اتركه وهو سينشئه تلقائياً
 MEMORY_FILE = "last_places_ids.txt" 
 
-# إحداثيات المدينة المنورة (توسيع النطاق قليلاً)
+# إحداثيات المدينة المنورة
 MADINAH_BBOX = "24.25,39.35,24.65,39.85"
 
 def is_sent(place_id):
@@ -48,9 +47,8 @@ def send_to_telegram(name, ptype, lat, lon):
 def hunt_places():
     print("🚀 جاري فحص المدينة المنورة...")
     
-    # استعلام مطور يبحث عن (النقطة والمبنى) معاً لضمان صيد كل شيء
     query = f"""
-    [out:json][timeout:25];
+    [out:json][timeout:30];
     (
       node["amenity"~"cafe|restaurant"]({MADINAH_BBOX});
       way["amenity"~"cafe|restaurant"]({MADINAH_BBOX});
@@ -58,33 +56,50 @@ def hunt_places():
     out center;
     """
     
-    url = "https://overpass-api.de/api/interpreter"
-    try:
-        response = requests.post(url, data={'data': query}).json()
-        places = response.get('elements', [])
-        print(f"📊 عدد الأماكن اللي لقاها الرادار: {len(places)}")
-        
-        count = 0
-        for p in places:
-            p_id = p.get('id')
-            tags = p.get('tags', {})
-            name = tags.get('name')
-            ptype = tags.get('amenity')
+    # قائمة خوادم بديلة في حال تعطل الأساسي
+    urls = [
+        "https://overpass-api.de/api/interpreter",
+        "https://lz4.overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter"
+    ]
+    
+    headers = {'User-Agent': 'MadinahRadarBot/1.0 (Contact: talal@example.com)'}
+    
+    success = False
+    for url in urls:
+        if success: break
+        try:
+            print(f"محاولة الاتصال بالخادم: {url}")
+            response = requests.post(url, data={'data': query}, headers=headers, timeout=30)
             
-            # جلب الإحداثيات سواء كانت نقطة أو مركز مبنى
-            lat = p.get('lat') or p.get('center', {}).get('lat')
-            lon = p.get('lon') or p.get('center', {}).get('lon')
-            
-            if name and not is_sent(p_id):
-                send_to_telegram(name, ptype, lat, lon)
-                save_to_memory(p_id)
-                count += 1
-                if count >= 5: break # نرسل 5 أماكن فقط في كل مرة عشان ما ينحظر البوت
+            if response.status_code == 200:
+                data = response.json()
+                places = data.get('elements', [])
+                print(f"📊 وجدنا {len(places)} مكان.")
                 
-        print(f"✅ تم إرسال {count} مكان جديد للقناة.")
+                count = 0
+                for p in places:
+                    p_id = p.get('id')
+                    tags = p.get('tags', {})
+                    name = tags.get('name')
+                    ptype = tags.get('amenity')
+                    lat = p.get('lat') or p.get('center', {}).get('lat')
+                    lon = p.get('lon') or p.get('center', {}).get('lon')
+                    
+                    if name and not is_sent(p_id):
+                        send_to_telegram(name, ptype, lat, lon)
+                        save_to_memory(p_id)
+                        count += 1
+                        if count >= 10: break 
                 
-    except Exception as e:
-        print(f"❌ خطأ في جلب البيانات: {e}")
+                print(f"✅ تم إرسال {count} مكان جديد.")
+                success = True
+            elif response.status_code == 429:
+                print("⚠️ الخادم مشغول (Too Many Requests)، جاري تجربة خادم آخر...")
+            else:
+                print(f"❌ فشل الخادم بكود: {response.status_code}")
+        except Exception as e:
+            print(f"❌ خطأ عند الاتصال بـ {url}: {e}")
 
 if __name__ == "__main__":
     hunt_places()
