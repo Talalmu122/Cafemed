@@ -4,11 +4,11 @@ import os
 # إعدادات تليجرام
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
-MEMORY_FILE = "places_memory.txt"
+# تأكد أن هذا الاسم هو نفس الموجود في جيت هاب أو اتركه وهو سينشئه تلقائياً
+MEMORY_FILE = "last_places_ids.txt" 
 
-# إحداثيات المدينة المنورة (نطاق واسع يغطي أغلب الأحياء)
-# [جنوب، غرب، شمال، شرق]
-MADINAH_BBOX = "24.30,39.40,24.60,39.80"
+# إحداثيات المدينة المنورة (توسيع النطاق قليلاً)
+MADINAH_BBOX = "24.25,39.35,24.65,39.85"
 
 def is_sent(place_id):
     if not os.path.exists(MEMORY_FILE):
@@ -21,11 +21,8 @@ def save_to_memory(place_id):
         f.write(str(place_id) + '\n')
 
 def send_to_telegram(name, ptype, lat, lon):
-    # تحديد الأيقونة حسب النوع
     icon = "☕️" if ptype == "cafe" else "🍽"
     label = "كافيه جديد" if ptype == "cafe" else "مطعم جديد"
-    
-    # رابط جوجل ماب بالإحداثيات
     map_link = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
     
     message = (
@@ -49,42 +46,45 @@ def send_to_telegram(name, ptype, lat, lon):
     requests.post(url, json=payload)
 
 def hunt_places():
-    print("جاري فحص المدينة المنورة عن أماكن جديدة...")
+    print("🚀 جاري فحص المدينة المنورة...")
     
-    # استعلام Overpass لجلب الكافيهات والمطاعم في المدينة
+    # استعلام مطور يبحث عن (النقطة والمبنى) معاً لضمان صيد كل شيء
     query = f"""
     [out:json][timeout:25];
     (
-      node["amenity"="cafe"]({MADINAH_BBOX});
-      node["amenity"="restaurant"]({MADINAH_BBOX});
+      node["amenity"~"cafe|restaurant"]({MADINAH_BBOX});
+      way["amenity"~"cafe|restaurant"]({MADINAH_BBOX});
     );
-    out body;
+    out center;
     """
     
     url = "https://overpass-api.de/api/interpreter"
     try:
         response = requests.post(url, data={'data': query}).json()
         places = response.get('elements', [])
+        print(f"📊 عدد الأماكن اللي لقاها الرادار: {len(places)}")
         
+        count = 0
         for p in places:
             p_id = p.get('id')
             tags = p.get('tags', {})
-            name = tags.get('name', 'مكان غير مسمى')
+            name = tags.get('name')
             ptype = tags.get('amenity')
-            lat = p.get('lat')
-            lon = p.get('lon')
             
-            # إذا كان المكان له اسم ولم يتم إرساله من قبل
-            if name != 'مكان غير مسمى' and not is_sent(p_id):
+            # جلب الإحداثيات سواء كانت نقطة أو مركز مبنى
+            lat = p.get('lat') or p.get('center', {}).get('lat')
+            lon = p.get('lon') or p.get('center', {}).get('lon')
+            
+            if name and not is_sent(p_id):
                 send_to_telegram(name, ptype, lat, lon)
                 save_to_memory(p_id)
-                print(f"✅ تم رصد: {name}")
+                count += 1
+                if count >= 5: break # نرسل 5 أماكن فقط في كل مرة عشان ما ينحظر البوت
+                
+        print(f"✅ تم إرسال {count} مكان جديد للقناة.")
                 
     except Exception as e:
         print(f"❌ خطأ في جلب البيانات: {e}")
 
 if __name__ == "__main__":
-    if not TOKEN or not CHAT_ID:
-        print("خطأ: تأكد من إضافة السيكريتس")
-    else:
-        hunt_places()
+    hunt_places()
