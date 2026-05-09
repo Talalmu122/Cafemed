@@ -1,40 +1,33 @@
-name: Madinah Cafe Radar
+name: Madinah Radar System
 
 on:
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
+    # التغيير هنا: */20 تعني العمل كل 20 دقيقة
+    - cron: '*/20 * * * *'
+  workflow_dispatch: # يتيح لك تشغيله يدوياً في أي وقت
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # هذي السطور ضرورية عشان جيت هاب يقدر يحفظ الملفات
     permissions:
       contents: write
-      
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
       - name: Install dependencies
-        run: pip install requests
-
-      - name: Run radar
+        run: pip install requests google-play-scraper
+      - name: Run Radar
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          GMAPS_API_KEY: ${{ secrets.GMAPS_API_KEY }}
         run: python main.py
-
-      - name: Save memory (Keep track of cafes)
+      - name: Save Memory
         run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
-          git add last_places_ids.txt || echo "No changes"
-          git commit -m "Update cafe memory" || echo "No changes"
+          git config --global user.name "Talal Radar"
+          git config --global user.email "radar@github.com"
+          # حفظ ذاكرة التطبيقات والكافيهات لضمان عدم التكرار
+          git add *.txt
+          git commit -m "Update Radar Memory" || exit 0
           git push
